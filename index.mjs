@@ -496,20 +496,28 @@ app.post("/api/applications", async (req, res) => {
 
 // ---------------- MongoDB Connection ----------------
 
-if (!MONGODB_URI) {
-  console.error("MONGODB_URI not found in .env");
-  process.exit(1);
-}
+const connectDB = async () => {
+  if (!MONGODB_URI) {
+    console.error("❌ MONGODB_URI not found in environment variables");
+    return;
+  }
 
-mongoose
-  .connect(MONGODB_URI, { serverSelectionTimeoutMS: 5000 })
-  .then(() => {
-    console.log("MongoDB Connected");
-
-    app.listen(PORT, () => {
-      console.log(`Server running at http://localhost:${PORT}`);
+  try {
+    await mongoose.connect(MONGODB_URI, { 
+      serverSelectionTimeoutMS: 10000,
+      connectTimeoutMS: 10000
     });
-  })
-  .catch((err) => {
-    console.error("MongoDB connection error:", err);
-  });
+    console.log("✅ MongoDB Connected Successfully");
+  } catch (err) {
+    console.error("❌ MongoDB connection error:", err.message);
+    console.log("Retrying connection in 5 seconds...");
+    setTimeout(connectDB, 5000);
+  }
+};
+
+// Start the server first (Better for Render.com to avoid boot timeouts)
+app.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log("Attempting to connect to MongoDB...");
+  connectDB();
+});
