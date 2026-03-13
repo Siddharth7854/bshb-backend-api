@@ -5,8 +5,27 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import bcrypt from "bcryptjs";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import mongoSanitize from "express-mongo-sanitize";
 
 const app = express();
+
+// ---------------- Security Middleware ----------------
+
+// Trust proxy for Render (so rate limiting works correctly)
+app.set("trust proxy", 1);
+
+app.use(helmet()); // Security headers
+app.use(mongoSanitize()); // Prevent NoSQL injection
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: "Too many requests from this IP, please try again after 15 minutes"
+});
+app.use("/api/", limiter); // Apply rate limiting to API routes
+
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
 
