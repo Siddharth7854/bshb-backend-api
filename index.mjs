@@ -8,8 +8,17 @@ import bcrypt from "bcryptjs";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
+import Razorpay from "razorpay";
+import crypto from "crypto";
 
 const app = express();
+
+// ---------------- Razorpay Setup ----------------
+
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_STXF9Dz5UsvG10",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "i8WPVTKnThhJEgmzjXcB8IqR",
+});
 
 // ---------------- Security Middleware ----------------
 
@@ -27,7 +36,7 @@ const limiter = rateLimit({
   max: 100, // Limit each IP to 100 requests per windowMs
   message: "Too many requests from this IP, please try again after 15 minutes"
 });
-app.use("/api/", limiter); // Apply rate limiting to API routes
+app.use("/api", limiter); // Changed from "/api/" to "/api"
 
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
@@ -295,6 +304,33 @@ const PortalStats = mongoose.model("PortalStats", portalStatsSchema);
 const User = mongoose.model("User", userSchema);
 const Application = mongoose.model("Application", applicationSchema);
 
+// ---------------- Payment Schema ----------------
+
+const paymentSchema = new mongoose.Schema(
+  {
+    orderId: { type: String, required: true },
+    paymentId: String,
+    signature: String,
+    amount: { type: Number, required: true },
+    currency: { type: String, default: "INR" },
+    status: {
+      type: String,
+      enum: ["created", "success", "failed"],
+      default: "created",
+    },
+    userId: String,
+    regNo: String,
+    paymentType: {
+      type: String,
+      enum: ["registration", "application_fee", "emd"],
+      required: true,
+    },
+  },
+  { timestamps: true }
+);
+
+const Payment = mongoose.model("Payment", paymentSchema);
+
 // ---------------- Notifications ----------------
 
 app.get("/api/notifications", async (req, res) => {
@@ -489,6 +525,82 @@ app.post("/api/applications", async (req, res) => {
     const item = await Application.create(req.body);
     res.status(201).json(item);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------- Razorpay Payment APIs ----------------
+
+app.get("/api/payments/test", (req, res) => {
+  res.json({ message: "Payment routes are active" });
+});
+
+app.post("/api/payments/create-order", async (req, res) => {
+  try {
+    const { amount, userId, regNo, paymentType } = req.body;
+
+    if (!amount || !paymentType) {
+      return res.status(400).json({ error: "Amount and paymentType are required" });
+    }
+
+    const options = {
+      amount: Math.round(amount * 100), // Convert to paise
+      currency: "INR",
+      receipt: `receipt_${Date.now()}`,
+    };
+
+    const order = await razorpay.orders.create(options);
+
+    // Save to DB
+    await Payment.create({
+      orderId: order.id,
+      amount: amount,
+      userId: userId,
+      regNo: regNo,
+      paymentType: paymentType,
+      status: "created",
+    });
+
+    res.json(order);
+  } catch (err) {
+    console.error("Razorpay Create Order Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/payments/verify", async (req, res) => {
+  try {
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+    const key_secret = process.env.RAZORPAY_KEY_SECRET || "i8WPVTKnThhJEgmzjXcB8IqR";
+
+    const generated_signature = crypto
+      .createHmac("sha256", key_secret)
+      .update(razorpay_order_id + "|" + razorpay_payment_id)
+      .digest("hex");
+
+    if (generated_signature === razorpay_signature) {
+      // Update Payment Record
+      await Payment.findOneAndUpdate(
+        { orderId: razorpay_order_id },
+        {
+          paymentId: razorpay_payment_id,
+          signature: razorpay_signature,
+          status: "success",
+        }
+      );
+
+      res.json({ success: true, message: "Payment verified successfully" });
+    } else {
+      await Payment.findOneAndUpdate(
+        { orderId: razorpay_order_id },
+        { status: "failed" }
+      );
+
+      res.status(400).json({ success: false, message: "Invalid signature" });
+    }
+  } catch (err) {
+    console.error("Razorpay Verify Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
