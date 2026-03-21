@@ -124,7 +124,7 @@ const portalStatsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const userSchema = new mongoose.Schema(
+const registrationSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true },
@@ -171,7 +171,7 @@ const userSchema = new mongoose.Schema(
 
 const applicationSchema = new mongoose.Schema(
   {
-    userId: { type: String, required: true },
+    registrationId: String,
     notificationId: { type: String, required: true },
     applicationId: { type: String, unique: true },
     status: { type: String, default: "submitted" },
@@ -301,8 +301,8 @@ const Notification = mongoose.model("Notification", notificationSchema);
 const Tender = mongoose.model("Tender", tenderSchema);
 const DownloadFormat = mongoose.model("DownloadFormat", downloadFormatSchema);
 const PortalStats = mongoose.model("PortalStats", portalStatsSchema);
-const User = mongoose.model("User", userSchema);
-const Application = mongoose.model("Application", applicationSchema);
+const Registration = mongoose.model("Registration", registrationSchema, "applicants_registrations");
+const Application = mongoose.model("Application", applicationSchema, "housing_applications");
 
 // ---------------- Payment Schema ----------------
 
@@ -318,7 +318,7 @@ const paymentSchema = new mongoose.Schema(
       enum: ["created", "success", "failed"],
       default: "created",
     },
-    userId: String,
+    registrationId: String,
     regNo: String,
     paymentType: {
       type: String,
@@ -329,7 +329,7 @@ const paymentSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const Payment = mongoose.model("Payment", paymentSchema);
+const Payment = mongoose.model("Payment", paymentSchema, "payments_history");
 
 // ---------------- Notifications ----------------
 
@@ -451,11 +451,11 @@ app.put("/api/portal-stats", async (req, res) => {
   }
 });
 
-app.get("/api/users/reg/:regNo", async (req, res) => {
+app.get("/api/registrations/reg/:regNo", async (req, res) => {
   try {
-    const user = await User.findOne({ regNo: req.params.regNo });
-    if (!user) return res.status(404).json({ error: "User not found" });
-    const result = user.toObject();
+    const registration = await Registration.findOne({ regNo: req.params.regNo });
+    if (!registration) return res.status(404).json({ error: "Registration not found" });
+    const result = registration.toObject();
     delete result.password;
     res.json(result);
   } catch (err) {
@@ -463,25 +463,25 @@ app.get("/api/users/reg/:regNo", async (req, res) => {
   }
 });
 
-// ---------------- Users ----------------
+// ---------------- Registrations ----------------
 
-app.get("/api/users", async (req, res) => {
+app.get("/api/registrations", async (req, res) => {
   try {
-    const data = await User.find().sort({ createdAt: -1 });
+    const data = await Registration.find().sort({ createdAt: -1 });
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post("/api/users", async (req, res) => {
+app.post("/api/registrations", async (req, res) => {
   try {
-    const userData = { ...req.body };
-    if (userData.password) {
+    const regData = { ...req.body };
+    if (regData.password) {
       const salt = await bcrypt.genSalt(10);
-      userData.password = await bcrypt.hash(userData.password, salt);
+      regData.password = await bcrypt.hash(regData.password, salt);
     }
-    const item = await User.create(userData);
+    const item = await Registration.create(regData);
     const result = item.toObject();
     delete result.password;
     res.status(201).json(result);
@@ -490,18 +490,18 @@ app.post("/api/users", async (req, res) => {
   }
 });
 
-app.post("/api/users/login", async (req, res) => {
+app.post("/api/registrations/login", async (req, res) => {
   try {
     const { emailOrPhone, password } = req.body;
-    const user = await User.findOne({
+    const registration = await Registration.findOne({
       $or: [{ email: emailOrPhone }, { phone: emailOrPhone }]
     });
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    if (!registration) return res.status(401).json({ error: "Invalid credentials" });
     
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, registration.password);
     if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
     
-    const result = user.toObject();
+    const result = registration.toObject();
     delete result.password;
     res.json(result);
   } catch (err) {
@@ -555,7 +555,7 @@ app.post("/api/payments/create-order", async (req, res) => {
     await Payment.create({
       orderId: order.id,
       amount: amount,
-      userId: userId,
+      registrationId: req.body.registrationId || userId,
       regNo: regNo,
       paymentType: paymentType,
       status: "created",
