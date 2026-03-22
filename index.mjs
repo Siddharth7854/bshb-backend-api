@@ -281,7 +281,7 @@ const applicationSchema = new mongoose.Schema(
     emdDate: String,
     emdMethod: String,
     
-    // Documents (URLs from Firebase)
+    // Documents (URLs from Supabase)
     applicantPhoto: { name: String, data: String },
     applicantSignature: { name: String, data: String },
     coApplicantPhoto: { name: String, data: String },
