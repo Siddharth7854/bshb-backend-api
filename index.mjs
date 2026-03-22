@@ -16,6 +16,8 @@ const app = express();
 
 // ---------------- Fast2SMS Configuration ----------------
 const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
+const FAST2SMS_SENDER_ID = process.env.FAST2SMS_SENDER_ID || ""; // DLT Sender ID
+const FAST2SMS_MESSAGE_ID = process.env.FAST2SMS_MESSAGE_ID || ""; // DLT Message/Template ID
 
 /**
  * Function to send SMS via Fast2SMS
@@ -26,26 +28,38 @@ const sendSMS = async (mobile, message) => {
     throw new Error("SMS service configuration missing");
   }
   try {
-    // Fast2SMS API endpoint (using Authorization header for security)
+    // Fast2SMS API endpoint
     const url = "https://www.fast2sms.com/dev/bulkV2";
     
     // Clean mobile number (remove +91 if present)
     const cleanMobile = mobile.replace("+91", "").trim();
 
-    const response = await axios.get(url, {
-      params: {
-        authorization: FAST2SMS_API_KEY,
-        route: "otp",
-        variables_values: message.match(/\d{6}/)[0], // Extract only the 6-digit OTP
-        numbers: cleanMobile,
-      }
-    });
+    // Determine route based on config
+    const route = FAST2SMS_SENDER_ID ? "dlt" : "otp";
+    const otp = message.match(/\d{6}/)[0];
 
-    console.log("Fast2SMS Sent Response:", response.data);
+    const params = {
+      authorization: FAST2SMS_API_KEY,
+      route: route,
+      numbers: cleanMobile,
+    };
+
+    if (route === "dlt") {
+      params.sender_id = FAST2SMS_SENDER_ID;
+      params.message = FAST2SMS_MESSAGE_ID; // This should be your DLT Template ID
+      params.variables_values = otp;
+    } else {
+      params.variables_values = otp;
+    }
+
+    console.log(`Sending SMS via Fast2SMS (${route} route)...`);
+    const response = await axios.get(url, { params });
+
+    console.log("Fast2SMS Response:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Fast2SMS Error:", error.response?.data || error.message);
-    throw new Error("Failed to send SMS via Fast2SMS");
+    console.error("Fast2SMS API Error:", error.response?.data || error.message);
+    throw new Error(error.response?.data?.message || "Failed to send SMS via Fast2SMS");
   }
 };
 
