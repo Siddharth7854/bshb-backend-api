@@ -14,49 +14,42 @@ import axios from "axios";
 
 const app = express();
 
-// ---------------- SMSCountry Configuration ----------------
-const SMSCOUNTRY_AUTH_KEY = process.env.SMSCOUNTRY_AUTH_KEY || "XlU4BQhZ6bGJ5BWPhnIp";
-const SMSCOUNTRY_AUTH_TOKEN = process.env.SMSCOUNTRY_AUTH_TOKEN || "bMNxzd0muFLbkpmorXjOcW0IZNK6hueWUjnPUzlV";
-const SMSCOUNTRY_SENDER_ID = process.env.SMSCOUNTRY_SENDER_ID || "BSHBIN";
+// ---------------- Fast2SMS Configuration ----------------
+const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY || "7826aTpoxvtrue3BJE5OXIHd94jCzwyQnYc0WMPmglfSshqGAFTIpbJ8aGQB5LRlcAHrZe02DUgqMuti";
 
 /**
- * Function to send SMS via SMSCountry
+ * Function to send SMS via Fast2SMS
  */
 const sendSMS = async (mobile, message) => {
   try {
-    // SMSCountry API endpoint
-    const url = `https://rest.smscountry.com/v0.1/Accounts/${SMSCOUNTRY_AUTH_KEY}/Messages`;
+    // Fast2SMS API endpoint (using Authorization header for security)
+    const url = "https://www.fast2sms.com/dev/bulkV2";
     
-    // Basic Auth header
-    const auth = Buffer.from(`${SMSCOUNTRY_AUTH_KEY}:${SMSCOUNTRY_AUTH_TOKEN}`).toString('base64');
-    
-    const response = await axios.post(url, {
-      Text: message,
-      Number: mobile.startsWith('+') ? mobile.substring(1) : mobile, // SMSCountry expects number without +
-      SenderId: SMSCOUNTRY_SENDER_ID,
-      DRNotifyUrl: "",
-      DRNotifyHttpMethod: "POST",
-      ToolId: ""
-    }, {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
+    // Clean mobile number (remove +91 if present)
+    const cleanMobile = mobile.replace("+91", "").trim();
+
+    const response = await axios.get(url, {
+      params: {
+        authorization: FAST2SMS_API_KEY,
+        route: "otp",
+        variables_values: message.match(/\d{6}/)[0], // Extract only the 6-digit OTP
+        numbers: cleanMobile,
       }
     });
 
-    console.log("SMS Sent Response:", response.data);
+    console.log("Fast2SMS Sent Response:", response.data);
     return response.data;
   } catch (error) {
-    console.error("SMSCountry Error:", error.response?.data || error.message);
-    throw new Error("Failed to send SMS via SMSCountry");
+    console.error("Fast2SMS Error:", error.response?.data || error.message);
+    throw new Error("Failed to send SMS via Fast2SMS");
   }
 };
 
 // ---------------- Razorpay Setup ----------------
 
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
+  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_STXF9Dz5UsvG10",
+  key_secret: process.env.RAZORPAY_KEY_SECRET || "i8WPVTKnThhJEgmzjXcB8IqR",
 });
 
 // ---------------- Security Middleware ----------------
@@ -78,7 +71,7 @@ const limiter = rateLimit({
 app.use("/api", limiter); // Changed from "/api/" to "/api"
 
 const PORT = process.env.PORT || 4000;
-const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://bshb:bshb%40admin2025@cluster0.p9wrhcd.mongodb.net/bshb_db?retryWrites=true&w=majority";
 
 console.log("Server starting...");
 console.log("Port:", PORT);
