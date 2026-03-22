@@ -15,12 +15,16 @@ import axios from "axios";
 const app = express();
 
 // ---------------- Fast2SMS Configuration ----------------
-const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY || "7826aTpoxvtrue3BJE5OXIHd94jCzwyQnYc0WMPmglfSshqGAFTIpbJ8aGQB5LRlcAHrZe02DUgqMuti";
+const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
 
 /**
  * Function to send SMS via Fast2SMS
  */
 const sendSMS = async (mobile, message) => {
+  if (!FAST2SMS_API_KEY) {
+    console.error("FAST2SMS_API_KEY is missing in environment variables");
+    throw new Error("SMS service configuration missing");
+  }
   try {
     // Fast2SMS API endpoint (using Authorization header for security)
     const url = "https://www.fast2sms.com/dev/bulkV2";
@@ -48,8 +52,8 @@ const sendSMS = async (mobile, message) => {
 // ---------------- Razorpay Setup ----------------
 
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_STXF9Dz5UsvG10",
-  key_secret: process.env.RAZORPAY_KEY_SECRET || "i8WPVTKnThhJEgmzjXcB8IqR",
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
 // ---------------- Security Middleware ----------------
@@ -71,7 +75,7 @@ const limiter = rateLimit({
 app.use("/api", limiter); // Changed from "/api/" to "/api"
 
 const PORT = process.env.PORT || 4000;
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://bshb:bshb%40admin2025@cluster0.p9wrhcd.mongodb.net/bshb_db?retryWrites=true&w=majority";
+const MONGODB_URI = process.env.MONGODB_URI;
 
 console.log("Server starting...");
 console.log("Port:", PORT);
