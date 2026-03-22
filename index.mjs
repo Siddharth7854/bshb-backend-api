@@ -756,6 +756,16 @@ app.get("/api/applications", async (req, res) => {
   }
 });
 
+app.get("/api/applications/:applicationId", async (req, res) => {
+  try {
+    const application = await Application.findOne({ applicationId: req.params.applicationId });
+    if (!application) return res.status(404).json({ error: "Application not found" });
+    res.json(application);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/applications", async (req, res) => {
   try {
     const appData = { ...req.body };
