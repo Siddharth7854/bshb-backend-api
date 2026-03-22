@@ -14,52 +14,37 @@ import axios from "axios";
 
 const app = express();
 
-// ---------------- Fast2SMS Configuration ----------------
-const FAST2SMS_API_KEY = process.env.FAST2SMS_API_KEY;
-const FAST2SMS_SENDER_ID = process.env.FAST2SMS_SENDER_ID || ""; // DLT Sender ID
-const FAST2SMS_MESSAGE_ID = process.env.FAST2SMS_MESSAGE_ID || ""; // DLT Message/Template ID
+// ---------------- 2Factor SMS Configuration ----------------
+const TWO_FACTOR_API_KEY = process.env.TWO_FACTOR_API_KEY;
+const TWO_FACTOR_SENDER_ID = process.env.TWO_FACTOR_SENDER_ID || "BSHBEL";
+const TWO_FACTOR_TEMPLATE_NAME = process.env.TWO_FACTOR_TEMPLATE_NAME || "BSHB";
 
 /**
- * Function to send SMS via Fast2SMS
+ * Function to send SMS via 2Factor.in
  */
 const sendSMS = async (mobile, message) => {
-  if (!FAST2SMS_API_KEY) {
-    console.error("FAST2SMS_API_KEY is missing in environment variables");
+  if (!TWO_FACTOR_API_KEY) {
+    console.error("TWO_FACTOR_API_KEY is missing in environment variables");
     throw new Error("SMS service configuration missing");
   }
   try {
-    // Fast2SMS API endpoint
-    const url = "https://www.fast2sms.com/dev/bulkV2";
+    // 2Factor.in API endpoint for sending OTP
+    // API Format: https://2factor.in/API/V1/{api_key}/SMS/{phone_number}/{otp}/{template_name}
     
     // Clean mobile number (remove +91 if present)
     const cleanMobile = mobile.replace("+91", "").trim();
-
-    // Determine route based on config
-    const route = FAST2SMS_SENDER_ID ? "dlt" : "otp";
     const otp = message.match(/\d{6}/)[0];
 
-    const params = {
-      authorization: FAST2SMS_API_KEY,
-      route: route,
-      numbers: cleanMobile,
-    };
+    const url = `https://2factor.in/API/V1/${TWO_FACTOR_API_KEY}/SMS/${cleanMobile}/${otp}/${TWO_FACTOR_TEMPLATE_NAME}`;
+    
+    console.log(`Sending OTP via 2Factor (Template: ${TWO_FACTOR_TEMPLATE_NAME})...`);
+    const response = await axios.get(url);
 
-    if (route === "dlt") {
-      params.sender_id = FAST2SMS_SENDER_ID;
-      params.message = FAST2SMS_MESSAGE_ID; // This should be your DLT Template ID
-      params.variables_values = otp;
-    } else {
-      params.variables_values = otp;
-    }
-
-    console.log(`Sending SMS via Fast2SMS (${route} route)...`);
-    const response = await axios.get(url, { params });
-
-    console.log("Fast2SMS Response:", response.data);
+    console.log("2Factor Response:", response.data);
     return response.data;
   } catch (error) {
-    console.error("Fast2SMS API Error:", error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || "Failed to send SMS via Fast2SMS");
+    console.error("2Factor API Error:", error.response?.data || error.message);
+    throw new Error(error.response?.data?.Details || "Failed to send SMS via 2Factor");
   }
 };
 
