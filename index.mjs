@@ -647,21 +647,52 @@ app.post("/api/users/login", async (req, res) => {
 app.post("/api/users/update-password", async (req, res) => {
   try {
     const { emailOrPhone, newPassword } = req.body;
-    const user = await User.findOne({
+    
+    // 1. Try finding in 'User' collection
+    let user = await User.findOne({
       $or: [{ email: emailOrPhone }, { phone: emailOrPhone }, { regNo: emailOrPhone }]
     });
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    // 2. Try finding in 'Registration' collection if not in 'User'
+    let registration = await Registration.findOne({
+      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }, { regNo: emailOrPhone }]
+    });
+
+    if (!user && !registration) {
+      return res.status(404).json({ error: "User not found in our records" });
     }
 
     // Hash new password
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
-    await user.save();
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
 
-    res.json({ message: "Password updated successfully" });
+    // Update in User collection if exists
+    if (user) {
+      user.password = hashedPassword;
+      await user.save();
+    }
+
+    // Update in Registration collection if exists
+    if (registration) {
+      registration.password = hashedPassword;
+      await registration.save();
+      
+      // If user record didn't exist, create it now to sync
+      if (!user) {
+        await User.create({
+          name: registration.name,
+          email: registration.email,
+          phone: registration.phone,
+          password: hashedPassword,
+          regNo: registration.regNo,
+          hasRegistrationProfile: true
+        });
+      }
+    }
+
+    res.json({ success: true, message: "Password updated successfully" });
   } catch (error) {
+    console.error("Update Password Error:", error);
     res.status(500).json({ error: error.message });
   }
 });
