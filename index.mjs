@@ -10,8 +10,75 @@ import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
+import axios from "axios";
 
 const app = express();
+
+// ---------------- Brevo SMTP & SMS Configuration ----------------
+
+const transporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false, // TLS
+  auth: {
+    user: "a599c8001@smtp-brevo.com",
+    pass: "GypJgkLjMq5F8ndT",
+  },
+});
+
+const BREVO_API_KEY = "GypJgkLjMq5F8ndT";
+
+const sendEmailOTP = async (email, otp) => {
+  const mailOptions = {
+    from: '"BSHB Support" <secretarybshb@gmail.com>',
+    to: email,
+    subject: "OTP for Password Reset - BSHB",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
+        <h2 style="color: #1E90FF; text-align: center;">BSHB Password Reset</h2>
+        <p>Dear Applicant,</p>
+        <p>You have requested to reset your password. Use the OTP below to proceed:</p>
+        <div style="background: #f4f4f4; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333; border-radius: 5px; margin: 20px 0;">
+          ${otp}
+        </div>
+        <p style="color: #666; font-size: 12px;">This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="font-size: 10px; color: #999; text-align: center;">Bihar State Housing Board - A Govt. of Bihar Undertaking</p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error("Email sending error:", error);
+    return false;
+  }
+};
+
+const sendSMSOTP = async (mobile, otp) => {
+  try {
+    await axios.post('https://api.brevo.com/v3/transactionalSMS/sms', {
+      type: 'transactional',
+      unicodeEnabled: true,
+      sender: 'BSHB',
+      recipient: `91${mobile}`,
+      content: `Your OTP for BSHB password reset is ${otp}. Valid for 10 minutes.`,
+    }, {
+      headers: {
+        'api-key': BREVO_API_KEY,
+        'content-type': 'application/json',
+        'accept': 'application/json'
+      }
+    });
+    return true;
+  } catch (error) {
+    console.error("SMS sending error:", error.response?.data || error.message);
+    return false;
+  }
+};
 
 // ---------------- Razorpay Setup ----------------
 
@@ -124,46 +191,53 @@ const portalStatsSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const registrationSchema = new mongoose.Schema(
+// --- Simplified User Schema (Basic Login & Identity) ---
+const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true },
     phone: { type: String, required: true },
     password: { type: String, required: true },
-    aadhaar: String,
-    address: String,
-    district: String,
-    pincode: String,
+    regNo: { type: String, unique: true },
+    hasRegistrationProfile: { type: Boolean, default: false },
+    hasHousingApplication: { type: Boolean, default: false },
+    resetPasswordOTP: String,
+    resetPasswordExpires: Date
+  },
+  { timestamps: true }
+);
+
+const registrationSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true },
+    email: { type: String, required: true },
+    phone: { type: String, required: true },
+    regNo: { type: String, required: true },
+    // Profile Details
     category: String,
-    annualIncome: String,
-    photo: String,
-    bankAccount: String,
-    ifsc: String,
-    idProofType: String,
-    idProofNumber: String,
-    fatherHusbandName: String,
     exServiceman: String,
     disability: String,
     gender: String,
+    fatherHusbandName: String,
+    idProofType: String,
+    idProofNumber: String,
     casteCertificateNo: String,
     village: String,
     postOffice: String,
     policeStation: String,
+    district: String,
     state: String,
-    paymentMethod: String,
+    pincode: String,
+    // Documents (Supabase URLs)
+    identityDoc: { name: String, data: String },
+    signatureDoc: { name: String, data: String },
+    identityDocUrl: String,
+    signatureDocUrl: String,
+    // Payment
     transactionId: String,
     paymentStatus: String,
     paymentDate: String,
     formSubmittedDate: String,
-    regNo: String,
-    identityDoc: {
-      name: String,
-      data: String
-    },
-    signatureDoc: {
-      name: String,
-      data: String
-    },
     createdAt: { type: Date, default: Date.now }
   },
   { timestamps: true }
@@ -276,6 +350,17 @@ const applicationSchema = new mongoose.Schema(
     coApplicantPhoto: { name: String, data: String },
     coApplicantSignature: { name: String, data: String },
     
+    // Explicit Document URLs
+    applicantPhotoUrl: String,
+    applicantSignatureUrl: String,
+    casteCertUrl: String,
+    aadhaarCardUrl: String,
+    panCardUrl: String,
+    residentialCertUrl: String,
+    incomeCertUrl: String,
+    affidavitUrl: String,
+    bankPassbookUrl: String,
+    
     annexures: {
       casteCert: { name: String, data: String },
       aadhaarCard: { name: String, data: String },
@@ -301,6 +386,7 @@ const Notification = mongoose.model("Notification", notificationSchema);
 const Tender = mongoose.model("Tender", tenderSchema);
 const DownloadFormat = mongoose.model("DownloadFormat", downloadFormatSchema);
 const PortalStats = mongoose.model("PortalStats", portalStatsSchema);
+const User = mongoose.model("User", userSchema, "users");
 const Registration = mongoose.model("Registration", registrationSchema, "applicants_registrations");
 const Application = mongoose.model("Application", applicationSchema, "housing_applications");
 
@@ -455,15 +541,146 @@ app.get("/api/registrations/reg/:regNo", async (req, res) => {
   try {
     const registration = await Registration.findOne({ regNo: req.params.regNo });
     if (!registration) return res.status(404).json({ error: "Registration not found" });
-    const result = registration.toObject();
-    delete result.password;
-    res.json(result);
+    res.json(registration);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------------- Registrations ----------------
+// ---------------- Users (Simplified Accounts) ----------------
+
+app.get("/api/users", async (req, res) => {
+  try {
+    const data = await User.find().sort({ createdAt: -1 });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/users/login", async (req, res) => {
+  try {
+    const { emailOrPhone, password } = req.body;
+    
+    // 1. Try finding in the simplified 'User' collection first
+    let user = await User.findOne({
+      $or: [
+        { email: emailOrPhone }, 
+        { phone: emailOrPhone },
+        { regNo: emailOrPhone }
+      ]
+    });
+
+    // 2. Fallback: If not found in 'User', check 'Registration' (for older users)
+    if (!user) {
+      const registration = await Registration.findOne({
+        $or: [
+          { email: emailOrPhone }, 
+          { phone: emailOrPhone },
+          { regNo: emailOrPhone }
+        ]
+      });
+      
+      if (registration) {
+        // Found in registrations, check password
+        const isMatch = await bcrypt.compare(password, registration.password);
+        if (isMatch) {
+          // Success, create a simplified User record for future logins
+          user = await User.create({
+            name: registration.name,
+            email: registration.email,
+            phone: registration.phone,
+            password: registration.password, // already hashed
+            regNo: registration.regNo,
+            hasRegistrationProfile: true
+          });
+        }
+      }
+    } else {
+      // User found in 'User' collection, check password
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
+    }
+
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    
+    const result = user.toObject();
+    delete result.password;
+    res.json(result);
+  } catch (err) {
+    console.error("Login API Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/users/forgot-password", async (req, res) => {
+  try {
+    const { emailOrPhone } = req.body;
+    const user = await User.findOne({
+      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }, { regNo: emailOrPhone }]
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetPasswordOTP = otp;
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+
+    // Try sending email if user has email
+    let emailSent = false;
+    if (user.email) {
+      emailSent = await sendEmailOTP(user.email, otp);
+    }
+
+    // Try sending SMS if user has phone
+    let smsSent = false;
+    if (user.phone) {
+      smsSent = await sendSMSOTP(user.phone, otp);
+    }
+
+    if (emailSent || smsSent) {
+      res.json({ message: "OTP sent successfully", via: emailSent ? "email" : "sms" });
+    } else {
+      res.status(500).json({ error: "Failed to send OTP via any method" });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/users/reset-password", async (req, res) => {
+  try {
+    const { emailOrPhone, otp, newPassword } = req.body;
+    const user = await User.findOne({
+      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }, { regNo: emailOrPhone }],
+      resetPasswordOTP: otp,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ error: "Invalid or expired OTP" });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    
+    // Clear OTP fields
+    user.resetPasswordOTP = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.json({ message: "Password reset successful" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- Registrations (Full Profile) ----------------
 
 app.get("/api/registrations", async (req, res) => {
   try {
@@ -477,34 +694,36 @@ app.get("/api/registrations", async (req, res) => {
 app.post("/api/registrations", async (req, res) => {
   try {
     const regData = { ...req.body };
-    if (regData.password) {
-      const salt = await bcrypt.genSalt(10);
-      regData.password = await bcrypt.hash(regData.password, salt);
-    }
-    const item = await Registration.create(regData);
-    const result = item.toObject();
+    const { name, email, phone, password, regNo } = regData;
+
+    // 1. Create User (Basic Login)
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newUser = await User.create({
+      name,
+      email,
+      phone,
+      password: hashedPassword,
+      regNo,
+      hasRegistrationProfile: true
+    });
+
+    // 2. Create Registration Profile
+    const profileData = { ...regData };
+    delete profileData.password;
+    
+    // Add explicit URL fields for documents if present
+    if (profileData.identityDoc?.data) profileData.identityDocUrl = profileData.identityDoc.data;
+    if (profileData.signatureDoc?.data) profileData.signatureDocUrl = profileData.signatureDoc.data;
+
+    const item = await Registration.create(profileData);
+    
+    const result = newUser.toObject();
     delete result.password;
     res.status(201).json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/registrations/login", async (req, res) => {
-  try {
-    const { emailOrPhone, password } = req.body;
-    const registration = await Registration.findOne({
-      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }]
-    });
-    if (!registration) return res.status(401).json({ error: "Invalid credentials" });
-    
-    const isMatch = await bcrypt.compare(password, registration.password);
-    if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
-    
-    const result = registration.toObject();
-    delete result.password;
-    res.json(result);
-  } catch (err) {
+    console.error("Registration Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -522,7 +741,32 @@ app.get("/api/applications", async (req, res) => {
 
 app.post("/api/applications", async (req, res) => {
   try {
-    const item = await Application.create(req.body);
+    const appData = { ...req.body };
+    
+    // Extract URLs for easy access
+    if (appData.applicantPhoto?.data) appData.applicantPhotoUrl = appData.applicantPhoto.data;
+    if (appData.applicantSignature?.data) appData.applicantSignatureUrl = appData.applicantSignature.data;
+    if (appData.annexures) {
+      const { annexures } = appData;
+      if (annexures.casteCert?.data) appData.casteCertUrl = annexures.casteCert.data;
+      if (annexures.aadhaarCard?.data) appData.aadhaarCardUrl = annexures.aadhaarCard.data;
+      if (annexures.panCard?.data) appData.panCardUrl = annexures.panCard.data;
+      if (annexures.residentialCert?.data) appData.residentialCertUrl = annexures.residentialCert.data;
+      if (annexures.incomeCert?.data) appData.incomeCertUrl = annexures.incomeCert.data;
+      if (annexures.affidavit?.data) appData.affidavitUrl = annexures.affidavit.data;
+      if (annexures.bankPassbook?.data) appData.bankPassbookUrl = annexures.bankPassbook.data;
+    }
+
+    const item = await Application.create(appData);
+    
+    // Update User flag to indicate they have filled an application
+    if (appData.regNo) {
+      await User.findOneAndUpdate(
+        { regNo: appData.regNo },
+        { hasHousingApplication: true }
+      );
+    }
+    
     res.status(201).json(item);
   } catch (err) {
     res.status(500).json({ error: err.message });
