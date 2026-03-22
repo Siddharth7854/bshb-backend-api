@@ -593,6 +593,10 @@ app.post("/api/users/login", async (req, res) => {
   try {
     const { emailOrPhone, password } = req.body;
     
+    if (!emailOrPhone || !password) {
+      return res.status(400).json({ error: "Credentials are required" });
+    }
+
     // 1. Try finding in the simplified 'User' collection first
     let user = await User.findOne({
       $or: [
@@ -630,17 +634,17 @@ app.post("/api/users/login", async (req, res) => {
     } else {
       // User found in 'User' collection, check password
       const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) return res.status(401).json({ error: "Invalid credentials" });
+      if (!isMatch) return res.status(401).json({ error: "Authentication failed: Invalid credentials" });
     }
 
-    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    if (!user) return res.status(401).json({ error: "Authentication failed: Invalid credentials" });
     
     const result = user.toObject();
     delete result.password;
     res.json(result);
   } catch (err) {
     console.error("Login API Error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal Server Error during login." });
   }
 });
 
@@ -711,7 +715,16 @@ app.get("/api/registrations", async (req, res) => {
 app.post("/api/registrations", async (req, res) => {
   try {
     const regData = { ...req.body };
-    const { name, email, phone, password, regNo } = regData;
+    const { name, email, phone, password, regNo, identityDoc, signatureDoc } = regData;
+
+    // --- Mandatory Field Check ---
+    if (!name || !email || !phone || !password || !regNo) {
+      return res.status(400).json({ error: "Missing mandatory fields: name, email, phone, password, and regNo are required." });
+    }
+
+    if (!identityDoc?.data || !signatureDoc?.data) {
+      return res.status(400).json({ error: "Mandatory documents (Identity Proof and Signature) are required." });
+    }
 
     // 1. Create User (Basic Login)
     const salt = await bcrypt.genSalt(10);
@@ -741,7 +754,11 @@ app.post("/api/registrations", async (req, res) => {
     res.status(201).json(result);
   } catch (err) {
     console.error("Registration Error:", err);
-    res.status(500).json({ error: err.message });
+    // Handle Duplicate Key Errors (MongoDB 11000)
+    if (err.code === 11000) {
+      return res.status(409).json({ error: "Registration failed: Email, Phone, or Registration Number already exists." });
+    }
+    res.status(500).json({ error: "Internal Server Error during registration." });
   }
 });
 
@@ -770,6 +787,24 @@ app.post("/api/applications", async (req, res) => {
   try {
     const appData = { ...req.body };
     
+    // --- Mandatory Field Check (Government Compliance) ---
+    const requiredFields = [
+      'applicantName', 'mobile', 'email', 'notificationId', 'applicationId', 
+      'permanentVillage', 'permanentDistrict', 'permanentState', 'permanentPincode',
+      'bankName', 'accountNumber', 'bankIFSC', 'applicantPAN'
+    ];
+
+    for (const field of requiredFields) {
+      if (!appData[field]) {
+        return res.status(400).json({ error: `Mandatory field missing: ${field} is required for government compliance.` });
+      }
+    }
+
+    // Check mandatory document URLs
+    if (!appData.applicantPhoto?.data || !appData.applicantSignature?.data) {
+      return res.status(400).json({ error: "Applicant Photo and Signature are mandatory documents." });
+    }
+    
     // Extract URLs for easy access
     if (appData.applicantPhoto?.data) appData.applicantPhotoUrl = appData.applicantPhoto.data;
     if (appData.applicantSignature?.data) appData.applicantSignatureUrl = appData.applicantSignature.data;
@@ -796,7 +831,8 @@ app.post("/api/applications", async (req, res) => {
     
     res.status(201).json(item);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Application Submission Error:", err);
+    res.status(500).json({ error: "Internal Server Error during application submission." });
   }
 });
 
