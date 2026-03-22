@@ -10,75 +10,12 @@ import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import Razorpay from "razorpay";
 import crypto from "crypto";
-import nodemailer from "nodemailer";
-import axios from "axios";
 
 const app = express();
 
-// ---------------- Brevo SMTP & SMS Configuration ----------------
-
-const transporter = nodemailer.createTransport({
-  host: process.env.BREVO_SMTP_HOST || "smtp-relay.brevo.com",
-  port: process.env.BREVO_SMTP_PORT || 587,
-  secure: false, // TLS
-  auth: {
-    user: process.env.BREVO_SMTP_USER,
-    pass: process.env.BREVO_SMTP_PASS,
-  },
-});
-
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-
-const sendEmailOTP = async (email, otp) => {
-  const mailOptions = {
-    from: '"BSHB Support" <secretarybshb@gmail.com>',
-    to: email,
-    subject: "OTP for Password Reset - BSHB",
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 10px;">
-        <h2 style="color: #1E90FF; text-align: center;">BSHB Password Reset</h2>
-        <p>Dear Applicant,</p>
-        <p>You have requested to reset your password. Use the OTP below to proceed:</p>
-        <div style="background: #f4f4f4; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #333; border-radius: 5px; margin: 20px 0;">
-          ${otp}
-        </div>
-        <p style="color: #666; font-size: 12px;">This OTP is valid for 10 minutes. If you did not request this, please ignore this email.</p>
-        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="font-size: 10px; color: #999; text-align: center;">Bihar State Housing Board - A Govt. of Bihar Undertaking</p>
-      </div>
-    `,
-  };
-
-  try {
-    await transporter.sendMail(mailOptions);
-    return true;
-  } catch (error) {
-    console.error("Email sending error:", error);
-    return false;
-  }
-};
-
-const sendSMSOTP = async (mobile, otp) => {
-  try {
-    await axios.post('https://api.brevo.com/v3/transactionalSMS/sms', {
-      type: 'transactional',
-      unicodeEnabled: true,
-      sender: 'BSHB',
-      recipient: `91${mobile}`,
-      content: `Your OTP for BSHB password reset is ${otp}. Valid for 10 minutes.`,
-    }, {
-      headers: {
-        'api-key': BREVO_API_KEY,
-        'content-type': 'application/json',
-        'accept': 'application/json'
-      }
-    });
-    return true;
-  } catch (error) {
-    console.error("SMS sending error:", error.response?.data || error.message);
-    return false;
-  }
-};
+// ---------------- Firebase Configuration (Placeholder for Admin SDK) ----------------
+// Note: You can use Firebase Admin SDK here if needed for server-side auth tasks.
+// For now, we rely on Firebase Client SDK for most auth tasks.
 
 // ---------------- Razorpay Setup ----------------
 
@@ -344,7 +281,7 @@ const applicationSchema = new mongoose.Schema(
     emdDate: String,
     emdMethod: String,
     
-    // Documents (URLs from Supabase)
+    // Documents (URLs from Firebase)
     applicantPhoto: { name: String, data: String },
     applicantSignature: { name: String, data: String },
     coApplicantPhoto: { name: String, data: String },
@@ -613,9 +550,9 @@ app.post("/api/users/login", async (req, res) => {
   }
 });
 
-app.post("/api/users/forgot-password", async (req, res) => {
+app.post("/api/users/update-password", async (req, res) => {
   try {
-    const { emailOrPhone } = req.body;
+    const { emailOrPhone, newPassword } = req.body;
     const user = await User.findOne({
       $or: [{ email: emailOrPhone }, { phone: emailOrPhone }, { regNo: emailOrPhone }]
     });
@@ -624,57 +561,12 @@ app.post("/api/users/forgot-password", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.resetPasswordOTP = otp;
-    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
-    await user.save();
-
-    // Try sending email if user has email
-    let emailSent = false;
-    if (user.email) {
-      emailSent = await sendEmailOTP(user.email, otp);
-    }
-
-    // Try sending SMS if user has phone
-    let smsSent = false;
-    if (user.phone) {
-      smsSent = await sendSMSOTP(user.phone, otp);
-    }
-
-    if (emailSent || smsSent) {
-      res.json({ message: "OTP sent successfully", via: emailSent ? "email" : "sms" });
-    } else {
-      res.status(500).json({ error: "Failed to send OTP via any method" });
-    }
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/api/users/reset-password", async (req, res) => {
-  try {
-    const { emailOrPhone, otp, newPassword } = req.body;
-    const user = await User.findOne({
-      $or: [{ email: emailOrPhone }, { phone: emailOrPhone }, { regNo: emailOrPhone }],
-      resetPasswordOTP: otp,
-      resetPasswordExpires: { $gt: Date.now() }
-    });
-
-    if (!user) {
-      return res.status(400).json({ error: "Invalid or expired OTP" });
-    }
-
     // Hash new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
-    
-    // Clear OTP fields
-    user.resetPasswordOTP = undefined;
-    user.resetPasswordExpires = undefined;
     await user.save();
 
-    res.json({ message: "Password reset successful" });
+    res.json({ message: "Password updated successfully" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
