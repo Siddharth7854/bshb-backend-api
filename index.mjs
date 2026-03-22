@@ -856,13 +856,20 @@ app.post("/api/payments/create-order", async (req, res) => {
       return res.status(400).json({ error: "Amount and paymentType are required" });
     }
 
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      console.error("CRITICAL: Razorpay Keys are missing in environment!");
+      return res.status(500).json({ error: "Payment gateway configuration error on server." });
+    }
+
     const options = {
       amount: Math.round(amount * 100), // Convert to paise
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
     };
 
+    console.log(`Creating Razorpay order for ${paymentType}, Amount: ${amount}`);
     const order = await razorpay.orders.create(options);
+    console.log("Razorpay Order Created Successfully:", order.id);
 
     // Save to DB
     await Payment.create({
@@ -876,8 +883,12 @@ app.post("/api/payments/create-order", async (req, res) => {
 
     res.json(order);
   } catch (err) {
-    console.error("Razorpay Create Order Error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Razorpay Create Order Error Details:", err);
+    res.status(500).json({ 
+      error: "Failed to create payment order with gateway.",
+      details: err.message,
+      code: err.code
+    });
   }
 });
 
