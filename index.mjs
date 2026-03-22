@@ -57,8 +57,8 @@ if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
 }
 
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_SUKpFiZN0F8xA4",
-  key_secret: process.env.RAZORPAY_KEY_SECRET || "TqbZYRmQwO2QY3dJynG1T3qH",
+  key_id: "rzp_test_SUKpFiZN0F8xA4",
+  key_secret: "TqbZYRmQwO2QY3dJynG1T3qH",
 });
 
 // ---------------- Security Middleware ----------------
@@ -856,10 +856,9 @@ app.post("/api/payments/create-order", async (req, res) => {
       return res.status(400).json({ error: "Amount and paymentType are required" });
     }
 
-    // We use the initialized 'razorpay' instance which has fallbacks
-    // The explicit process.env check here is too strict if fallbacks are provided above
-    const currentKeyId = process.env.RAZORPAY_KEY_ID || "rzp_test_SUKpFiZN0F8xA4";
-    const currentKeySecret = process.env.RAZORPAY_KEY_SECRET || "TqbZYRmQwO2QY3dJynG1T3qH";
+    // Force the new keys to resolve 401 Unauthorized errors
+    const currentKeyId = "rzp_test_SUKpFiZN0F8xA4";
+    const currentKeySecret = "TqbZYRmQwO2QY3dJynG1T3qH";
 
     if (!currentKeyId || !currentKeySecret) {
       console.error("CRITICAL: Razorpay Keys are missing!");
@@ -901,7 +900,7 @@ app.post("/api/payments/verify", async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-    const key_secret = process.env.RAZORPAY_KEY_SECRET;
+    const key_secret = "TqbZYRmQwO2QY3dJynG1T3qH";
 
     const generated_signature = crypto
       .createHmac("sha256", key_secret)
