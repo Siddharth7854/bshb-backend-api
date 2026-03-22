@@ -18,16 +18,16 @@ const app = express();
 // ---------------- Brevo SMTP & SMS Configuration ----------------
 
 const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
+  host: process.env.BREVO_SMTP_HOST || "smtp-relay.brevo.com",
+  port: process.env.BREVO_SMTP_PORT || 587,
   secure: false, // TLS
   auth: {
-    user: "a599c8001@smtp-brevo.com",
-    pass: "GypJgkLjMq5F8ndT",
+    user: process.env.BREVO_SMTP_USER,
+    pass: process.env.BREVO_SMTP_PASS,
   },
 });
 
-const BREVO_API_KEY = "GypJgkLjMq5F8ndT";
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
 
 const sendEmailOTP = async (email, otp) => {
   const mailOptions = {
@@ -83,8 +83,8 @@ const sendSMSOTP = async (mobile, otp) => {
 // ---------------- Razorpay Setup ----------------
 
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_STXF9Dz5UsvG10",
-  key_secret: process.env.RAZORPAY_KEY_SECRET || "i8WPVTKnThhJEgmzjXcB8IqR",
+  key_id: process.env.RAZORPAY_KEY_ID,
+  key_secret: process.env.RAZORPAY_KEY_SECRET,
 });
 
 // ---------------- Security Middleware ----------------
@@ -816,7 +816,7 @@ app.post("/api/payments/verify", async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-    const key_secret = process.env.RAZORPAY_KEY_SECRET || "i8WPVTKnThhJEgmzjXcB8IqR";
+    const key_secret = process.env.RAZORPAY_KEY_SECRET;
 
     const generated_signature = crypto
       .createHmac("sha256", key_secret)
