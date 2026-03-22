@@ -10,12 +10,47 @@ import rateLimit from "express-rate-limit";
 import mongoSanitize from "express-mongo-sanitize";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import axios from "axios";
 
 const app = express();
 
-// ---------------- Firebase Configuration (Placeholder for Admin SDK) ----------------
-// Note: You can use Firebase Admin SDK here if needed for server-side auth tasks.
-// For now, we rely on Firebase Client SDK for most auth tasks.
+// ---------------- SMSCountry Configuration ----------------
+const SMSCOUNTRY_AUTH_KEY = process.env.SMSCOUNTRY_AUTH_KEY || "XlU4BQhZ6bGJ5BWPhnIp";
+const SMSCOUNTRY_AUTH_TOKEN = process.env.SMSCOUNTRY_AUTH_TOKEN || "bMNxzd0muFLbkpmorXjOcW0IZNK6hueWUjnPUzlV";
+const SMSCOUNTRY_SENDER_ID = process.env.SMSCOUNTRY_SENDER_ID || "BSHBIN";
+
+/**
+ * Function to send SMS via SMSCountry
+ */
+const sendSMS = async (mobile, message) => {
+  try {
+    // SMSCountry API endpoint
+    const url = `https://rest.smscountry.com/v0.1/Accounts/${SMSCOUNTRY_AUTH_KEY}/Messages`;
+    
+    // Basic Auth header
+    const auth = Buffer.from(`${SMSCOUNTRY_AUTH_KEY}:${SMSCOUNTRY_AUTH_TOKEN}`).toString('base64');
+    
+    const response = await axios.post(url, {
+      Text: message,
+      Number: mobile.startsWith('+') ? mobile.substring(1) : mobile, // SMSCountry expects number without +
+      SenderId: SMSCOUNTRY_SENDER_ID,
+      DRNotifyUrl: "",
+      DRNotifyHttpMethod: "POST",
+      ToolId: ""
+    }, {
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    console.log("SMS Sent Response:", response.data);
+    return response.data;
+  } catch (error) {
+    console.error("SMSCountry Error:", error.response?.data || error.message);
+    throw new Error("Failed to send SMS via SMSCountry");
+  }
+};
 
 // ---------------- Razorpay Setup ----------------
 
@@ -326,6 +361,65 @@ const PortalStats = mongoose.model("PortalStats", portalStatsSchema);
 const User = mongoose.model("User", userSchema, "users");
 const Registration = mongoose.model("Registration", registrationSchema, "applicants_registrations");
 const Application = mongoose.model("Application", applicationSchema, "housing_applications");
+
+// ---------------- OTP Store (Temporary for validation) ----------------
+// In a real production app, use Redis or a DB collection with TTL
+const otpStore = new Map();
+
+// ---------------- OTP APIs ----------------
+
+app.post("/api/otp/send", async (req, res) => {
+  try {
+    const { mobile } = req.body;
+    if (!mobile) return res.status(400).json({ error: "Mobile number is required" });
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    // Store OTP with 5-minute expiry
+    otpStore.set(mobile, {
+      otp,
+      expires: Date.now() + 5 * 60 * 1000
+    });
+
+    const message = `Your BSHB Bihar Housing Connect verification code is: ${otp}. Valid for 5 minutes.`;
+    
+    // Send via SMSCountry
+    await sendSMS(mobile, message);
+
+    res.json({ success: true, message: "OTP sent successfully" });
+  } catch (err) {
+    console.error("OTP Send Error:", err.message);
+    res.status(500).json({ error: "Failed to send OTP" });
+  }
+});
+
+app.post("/api/otp/verify", async (req, res) => {
+  try {
+    const { mobile, otp } = req.body;
+    if (!mobile || !otp) return res.status(400).json({ error: "Mobile and OTP are required" });
+
+    const storedData = otpStore.get(mobile);
+    
+    if (!storedData) {
+      return res.status(400).json({ error: "No OTP found for this number" });
+    }
+
+    if (Date.now() > storedData.expires) {
+      otpStore.delete(mobile);
+      return res.status(400).json({ error: "OTP expired" });
+    }
+
+    if (storedData.otp === otp) {
+      otpStore.delete(mobile);
+      res.json({ success: true, message: "OTP verified successfully" });
+    } else {
+      res.status(400).json({ error: "Invalid OTP" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ---------------- Payment Schema ----------------
 
