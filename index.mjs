@@ -381,13 +381,17 @@ app.post("/api/otp/send", async (req, res) => {
 
     const message = `Your BSHB Bihar Housing Connect verification code is: ${otp}. Valid for 5 minutes.`;
     
-    // Send via SMSCountry
-    await sendSMS(mobile, message);
-
-    res.json({ success: true, message: "OTP sent successfully" });
+    // Send via Fast2SMS
+    try {
+      await sendSMS(mobile, message);
+      res.json({ success: true, message: "OTP sent successfully" });
+    } catch (smsErr) {
+      console.error("SMS Service Error:", smsErr.message);
+      res.status(502).json({ error: "SMS gateway failed: " + smsErr.message });
+    }
   } catch (err) {
-    console.error("OTP Send Error:", err.message);
-    res.status(500).json({ error: "Failed to send OTP" });
+    console.error("OTP API Error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
